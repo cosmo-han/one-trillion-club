@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>1조 클럽</title>
+  <!--
+    원스토어 웹게임용 페이지(YEO-158). 원스토어 앱이 이 페이지를 웹뷰(iframe)로 띄운다.
+    원스토어 H5 Game SDK 필수 순서: createSDK → initializeAsync → setLoadingProgress(0~100) → startGameAsync.
+    startGameAsync를 부르지 않으면 원스토어 로딩 화면이 닫히지 않아 검수에서 반려된다.
+    pause/resume/exit는 게임(OneStoreBridge)에 알려 소리를 멈추고 진행을 저장한다.
+    원스토어 앱 밖(브라우저로 직접 열기)에서는 SDK 초기화가 실패하거나 오래 걸리므로 기다리지 않고 게임만 띄운다.
+  -->
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #F4F5F7; }
+    #unity-canvas { position: absolute; top: 0; display: block; background: #F4F5F7; touch-action: none; outline: none; }
+    #loading { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 160px; height: 4px;
+               background: #E5E8EB; border-radius: 2px; overflow: hidden; }
+    #loading-fill { width: 0; height: 100%; background: #1D2740; }
+  </style>
+</head>
+<body>
+  <canvas id="unity-canvas" tabindex="-1"></canvas>
+  <div id="loading"><div id="loading-fill"></div></div>
+
+  <script>
+    // 앱인토스 SDK가 시작할 때 토스로 성능 로그를 보내려 한다. 토스 밖이라 보낼 곳이 없으니 조용히 넘긴다(아무것도 보내지 않음)
+    window.AppsInToss = window.AppsInToss || { eventLog: function () { return Promise.resolve(); } };
+
+    // 세로 게임이다. 폰에서는 화면을 꽉 채우고, 가로로 넓은 화면(PC)에서는 세로 비율로 가운데에 둔다
+    var MAX_ASPECT = 0.62;
+    var canvas = document.getElementById('unity-canvas');
+    function layout() {
+      var w = window.innerWidth, h = window.innerHeight;
+      var cw = Math.min(w, Math.round(h * MAX_ASPECT));
+      canvas.style.width = cw + 'px';
+      canvas.style.height = h + 'px';
+      canvas.style.left = Math.round((w - cw) / 2) + 'px';
+    }
+    window.addEventListener('resize', layout);
+    layout();
+  </script>
+  <script src="Build/76c64512be3d8b7a37c3c3008fcbeeb1.loader.js"></script>
+  <script type="module">
+    import { createSDK } from 'https://h5sdk.onestore.net/lib/v1.1.0/onestore-h5-sdk.min.js';
+
+    var INIT_TIMEOUT_MS = 5000;
+    var BRIDGE = 'OneStoreBridge';
+    var sdk = null;
+    var unity = null;
+    var fill = document.getElementById('loading-fill');
+
+    function send(method, value) {
+      if (unity) unity.SendMessage(BRIDGE, method, value || '');
+    }
+
+    function withTimeout(promise, ms) {
+      return Promise.race([promise, new Promise(function (_, reject) {
+        setTimeout(function () { reject(new Error('timeout')); }, ms);
+      })]);
+    }
+
+    async function initSdk() {
+      try {
+        var s = createSDK();
+        await withTimeout(s.initializeAsync(), INIT_TIMEOUT_MS);
+        // 백그라운드·광고·결제로 멈출 때: 게임 소리와 진행을 멈추고 저장
+        s.on('pause', function (ev) { send('OnPause', ev && ev.reason); });
+        s.on('resume', function () { send('OnResume'); });
+        // 원스토어가 게임을 닫을 때: 0.5초 안에 저장해야 한다
+        s.on('exit', function () { send('OnExit'); });
+        return s;
+      } catch (e) {
+        console.warn('[OneStore] SDK 초기화 실패(원스토어 앱 밖이면 정상):', e);
+        return null;
+      }
+    }
+
+    function report(progress) {
+      var p = Math.max(0, Math.min(100, Math.round(progress * 100)));
+      fill.style.width = p + '%';
+      if (sdk) { try { sdk.setLoadingProgress(p); } catch (e) {} }
+    }
+
+    sdk = await initSdk();
+
+    var config = {
+      dataUrl: 'Build/1880f3ab79885af466f103029d61a01d.data.unityweb',
+      frameworkUrl: 'Build/a858bc7b295c878b672b11d7e1aba9b6.framework.js.unityweb',
+      codeUrl: 'Build/a0ccd7aed3f7e4781d36170a191fc79d.wasm.unityweb',
+      symbolsUrl: 'Build/7b4528381a5d447d621132595508e2c2.symbols.json.unityweb',
+      streamingAssetsUrl: 'StreamingAssets',
+      companyName: "cosmo",
+      productName: "TrillionClub",
+      productVersion: "0.4",
+    };
+
+    try {
+      unity = await createUnityInstance(canvas, config, report);
+      report(1);
+      document.getElementById('loading').style.display = 'none';
+      if (sdk) await sdk.startGameAsync();
+    } catch (e) {
+      console.error('[OneStore] 게임 시작 실패:', e);
+    }
+  </script>
+</body>
+</html>
