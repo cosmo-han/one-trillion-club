@@ -40,7 +40,7 @@
     window.addEventListener('resize', layout);
     layout();
   </script>
-  <script src="Build/76c64512be3d8b7a37c3c3008fcbeeb1.loader.js"></script>
+  <script src="Build/3cbd9d4b542b1966c8465d94ca8ffa2e.loader.js"></script>
   <script type="module">
     import { createSDK } from 'https://h5sdk.onestore.net/lib/v1.1.0/onestore-h5-sdk.min.js';
 
@@ -84,11 +84,38 @@
 
     sdk = await initSdk();
 
+    // 보상형 광고(YEO-161). 게임(OneStoreAds.jslib)이 부르고, 결과는 OneStoreAds 오브젝트로 돌려준다.
+    // 지면 ID는 게임 코드(Ads.cs)에 있다. requestId는 필수인데 서버가 없어 여기서 만든다
+    function newRequestId() {
+      if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+      return Date.now().toString(36) + Math.random().toString(36).slice(2);
+    }
+    window.OneStoreAds = {
+      isSupported: function () {
+        try { return !!sdk && sdk.ads.isSupported('rewarded'); } catch (e) { return false; }
+      },
+      preload: function (placementId) {
+        if (!this.isSupported()) return;
+        try { sdk.ads.loadRewarded({ placementId: placementId }); } catch (e) { console.warn('[OneStore] 광고 불러오기 실패:', e); }
+      },
+      showRewarded: async function (placementId) {
+        var status = 'failed';
+        try {
+          var r = await sdk.ads.showRewardedAsync({ placementId: placementId, requestId: newRequestId() });
+          status = r.status + (r.reason ? ':' + r.reason : '');
+        } catch (e) {
+          status = 'failed:' + (e && e.message);
+        }
+        if (unity) unity.SendMessage('OneStoreAds', 'OnRewardedResult', status);
+        this.preload(placementId);
+      },
+    };
+
     var config = {
-      dataUrl: 'Build/1880f3ab79885af466f103029d61a01d.data.unityweb',
-      frameworkUrl: 'Build/a858bc7b295c878b672b11d7e1aba9b6.framework.js.unityweb',
-      codeUrl: 'Build/a0ccd7aed3f7e4781d36170a191fc79d.wasm.unityweb',
-      symbolsUrl: 'Build/7b4528381a5d447d621132595508e2c2.symbols.json.unityweb',
+      dataUrl: 'Build/27893f0bbb8c2bae12614aa4cff37df5.data.unityweb',
+      frameworkUrl: 'Build/df8c2a684b5200ce4633910dab257179.framework.js.unityweb',
+      codeUrl: 'Build/d714efe7e60b1cd198b1d8c032e4ba49.wasm.unityweb',
+      symbolsUrl: 'Build/5673a83a217433ad2b00417751ca7bc4.symbols.json.unityweb',
       streamingAssetsUrl: 'StreamingAssets',
       companyName: "cosmo",
       productName: "TrillionClub",
