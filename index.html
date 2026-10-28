@@ -40,7 +40,7 @@
     window.addEventListener('resize', layout);
     layout();
   </script>
-  <script src="Build/585c3aac4c9ad08a15e1b0992a71201e.loader.js"></script>
+  <script src="Build/12de36c856b4763e350c444f5b87412e.loader.js"></script>
   <script type="module">
     import { createSDK } from 'https://h5sdk.onestore.net/lib/v1.1.0/onestore-h5-sdk.min.js';
 
@@ -48,6 +48,9 @@
     var BRIDGE = 'OneStoreBridge';
     var sdk = null;
     var unity = null;
+    // 테스트 메뉴의 [원스토어 광고 상태]에 보여 줄 초기화 결과(YEO-286)
+    var initInfo = 'not-started';
+    var lastAdInfo = '-';
     var fill = document.getElementById('loading-fill');
 
     function send(method, value) {
@@ -63,7 +66,9 @@
     async function initSdk() {
       try {
         var s = createSDK();
-        await withTimeout(s.initializeAsync(), INIT_TIMEOUT_MS);
+        // 원스토어 앱 밖처럼 지원 안 되는 환경에서는 예외 없이 { err }로 끝난다
+        var r = await withTimeout(s.initializeAsync(), INIT_TIMEOUT_MS);
+        initInfo = r && r.err ? 'err:' + r.err : 'ok';
         // 백그라운드·광고·결제로 멈출 때: 게임 소리와 진행을 멈추고 저장
         s.on('pause', function (ev) { send('OnPause', ev && ev.reason); });
         s.on('resume', function () { send('OnResume'); });
@@ -72,6 +77,7 @@
         return s;
       } catch (e) {
         console.warn('[OneStore] SDK 초기화 실패(원스토어 앱 밖이면 정상):', e);
+        initInfo = 'fail:' + (e && e.message);
         return null;
       }
     }
@@ -82,6 +88,10 @@
       if (sdk) { try { sdk.setLoadingProgress(p); } catch (e) {} }
     }
 
+    // 원스토어 앱 연결 통로. SDK가 연결한 뒤 window에서 지우므로 초기화 전에 본다(YEO-286)
+    var bridgeAtLoad = window.webGameBridge ? 'android'
+      : (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.webGameBridge) ? 'ios'
+      : (window.parent && window.parent !== window) ? 'iframe' : 'none';
     sdk = await initSdk();
 
     // 보상형 광고(YEO-161). 게임(OneStoreAds.jslib)이 부르고, 결과는 OneStoreAds 오브젝트로 돌려준다.
@@ -96,7 +106,8 @@
       },
       preload: function (placementId) {
         if (!this.isSupported()) return;
-        try { sdk.ads.loadRewarded({ placementId: placementId }); } catch (e) { console.warn('[OneStore] 광고 불러오기 실패:', e); }
+        try { sdk.ads.loadRewarded({ placementId: placementId }); lastAdInfo = 'load:' + placementId; }
+        catch (e) { console.warn('[OneStore] 광고 불러오기 실패:', e); lastAdInfo = 'load-fail:' + (e && e.message); }
       },
       showRewarded: async function (placementId) {
         var status = 'failed';
@@ -106,16 +117,24 @@
         } catch (e) {
           status = 'failed:' + (e && e.message);
         }
+        lastAdInfo = 'show:' + status;
         if (unity) unity.SendMessage('OneStoreAds', 'OnRewardedResult', status);
         this.preload(placementId);
+      },
+      // 테스트 메뉴용 진단(YEO-286): 초기화 결과, 원스토어 앱 연결 통로, 광고 지원, 마지막 광고 처리, 주소
+      debugInfo: function () {
+        var rewarded = false, interstitial = false;
+        try { rewarded = !!sdk && sdk.ads.isSupported('rewarded'); interstitial = !!sdk && sdk.ads.isSupported('interstitial'); } catch (e) {}
+        return 'init=' + initInfo + ' | bridge=' + bridgeAtLoad + ' | rewarded=' + rewarded + ' interstitial=' + interstitial
+          + ' | last=' + lastAdInfo + ' | path=' + location.pathname;
       },
     };
 
     var config = {
-      dataUrl: 'Build/6d15f1dd17f87e4b142b1aa53f051228.data.unityweb',
-      frameworkUrl: 'Build/bd85d446ce125755cd03adacc9dae1d6.framework.js.unityweb',
-      codeUrl: 'Build/5f62c4039da563eef811e6393844bdec.wasm.unityweb',
-      symbolsUrl: 'Build/b91b381c8bfeea632b6c79b7ca2796bb.symbols.json.unityweb',
+      dataUrl: 'Build/9742c91df43d12aa9c173a73497c0632.data.unityweb',
+      frameworkUrl: 'Build/50bee736c1127167ac1b631ebafa5133.framework.js.unityweb',
+      codeUrl: 'Build/61dfffa2587f2a39d8c943199bcc5b33.wasm.unityweb',
+      symbolsUrl: 'Build/e3e63daada2bf6ba36c7601a2d0e66a7.symbols.json.unityweb',
       streamingAssetsUrl: 'StreamingAssets',
       companyName: "cosmo",
       productName: "TrillionClub",
